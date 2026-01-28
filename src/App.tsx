@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import Dashboard from "./pages/Dashboard";
 import Buses from "./pages/Buses";
 import Drivers from "./pages/Drivers";
+import Students from "./pages/Students";
 import RoutesPage from "./pages/Routes";
 import LiveMonitoring from "./pages/LiveMonitoring";
 import ChangeRequests from "./pages/ChangeRequests";
@@ -27,7 +28,7 @@ const App = () => {
         console.error("Failed to seed Firestore:", error);
       }
     };
-    
+
     initializeData();
   }, []);
 
@@ -42,6 +43,7 @@ const App = () => {
               <Route path="/" element={<Dashboard />} />
               <Route path="/buses" element={<Buses />} />
               <Route path="/drivers" element={<Drivers />} />
+              <Route path="/students" element={<Students />} />
               <Route path="/routes" element={<RoutesPage />} />
               <Route path="/live" element={<LiveMonitoring />} />
               <Route path="/requests" element={<ChangeRequests />} />

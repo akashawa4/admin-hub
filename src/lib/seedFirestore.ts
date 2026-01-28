@@ -7,7 +7,7 @@ import {
     Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { mockBuses, mockDrivers, mockRoutes, mockLiveBuses, mockChangeRequests } from '@/data/mockData';
+import { mockBuses, mockDrivers, mockRoutes, mockLiveBuses, mockChangeRequests, mockStudents } from '@/data/mockData';
 
 // Seed all mock data to Firestore
 export async function seedFirestore() {
@@ -93,6 +93,19 @@ export async function seedFirestore() {
             await commitIfNeeded();
         }
 
+        // Seed Students
+        console.log(`Seeding ${mockStudents.length} students...`);
+        for (const student of mockStudents) {
+            const docRef = doc(db, 'students', student.id);
+            batch.set(docRef, {
+                ...student,
+                createdAt: Timestamp.now(),
+                updatedAt: Timestamp.now(),
+            });
+            operationCount++;
+            await commitIfNeeded();
+        }
+
         // Commit any remaining operations
         if (operationCount > 0) {
             await batch.commit();
@@ -104,7 +117,8 @@ export async function seedFirestore() {
         console.log(`   - ${mockRoutes.length} routes`);
         console.log(`   - ${mockLiveBuses.length} live buses`);
         console.log(`   - ${mockChangeRequests.length} change requests`);
-        
+        console.log(`   - ${mockStudents.length} students`);
+
         return { success: true };
     } catch (error) {
         console.error('❌ Error seeding Firestore:', error);
@@ -133,7 +147,7 @@ export async function checkExistingData() {
 
 // Clear all data from Firestore (use with caution!)
 export async function clearFirestore() {
-    const collections = ['buses', 'drivers', 'routes', 'liveBuses', 'changeRequests'];
+    const collections = ['buses', 'drivers', 'routes', 'liveBuses', 'changeRequests', 'students'];
 
     for (const collectionName of collections) {
         const snapshot = await getDocs(collection(db, collectionName));

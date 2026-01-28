@@ -18,6 +18,7 @@ export interface Driver {
   assignedBusId: string | null;
   status: DriverStatus;
   phone?: string;
+  password?: string;
 }
 
 export interface Stop {
@@ -51,4 +52,24 @@ export interface ChangeRequest {
   requestedStop: string;
   status: RequestStatus;
   requestedAt: string;
+}
+
+export type StudentYear = '1st Year' | '2nd Year' | '3rd Year' | '4th Year';
+export type StudentStatus = 'active' | 'inactive';
+
+export interface Student {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  year: StudentYear;
+  department: string;
+  password: string;
+  routeId?: string | null;
+  stopId?: string | null;
+  routeName?: string | null;
+  stopName?: string | null;
+  status: StudentStatus;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
