@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
-import { useEffect } from "react";
 import Dashboard from "./pages/Dashboard";
 import Buses from "./pages/Buses";
 import Drivers from "./pages/Drivers";
@@ -13,25 +12,10 @@ import RoutesPage from "./pages/Routes";
 import LiveMonitoring from "./pages/LiveMonitoring";
 import ChangeRequests from "./pages/ChangeRequests";
 import NotFound from "./pages/NotFound";
-import { seedFirestore } from "./lib/seedFirestore";
 
 const queryClient = new QueryClient();
 
 const App = () => {
-  useEffect(() => {
-    // Seed Firestore with mock data on app initialization
-    const initializeData = async () => {
-      try {
-        console.log("Seeding Firestore with mock data...");
-        await seedFirestore();
-      } catch (error) {
-        console.error("Failed to seed Firestore:", error);
-      }
-    };
-
-    initializeData();
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

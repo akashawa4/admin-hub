@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
@@ -23,12 +23,24 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { Route, Stop } from '@/types/admin';
-import { mockRoutes } from '@/data/mockData';
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  Timestamp,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 
 export default function Routes() {
-  const [routes, setRoutes] = useState<Route[]>(mockRoutes);
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(routes[0]?.id || null);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [isRouteFormOpen, setIsRouteFormOpen] = useState(false);
   const [isStopFormOpen, setIsStopFormOpen] = useState(false);
   const [isDeleteRouteOpen, setIsDeleteRouteOpen] = useState(false);
@@ -40,6 +52,31 @@ export default function Routes() {
 
   const [routeFormData, setRouteFormData] = useState({ name: '', startingPoint: '' });
   const [stopFormData, setStopFormData] = useState({ name: '' });
+
+  // Load data from Firestore
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const routesSnapshot = await getDocs(query(collection(db, 'routes'), orderBy('name')));
+      const routesData = routesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Route[];
+      setRoutes(routesData);
+      if (routesData.length > 0 && !selectedRouteId) {
+        setSelectedRouteId(routesData[0].id);
+        setShowRouteDetails(true);
+      }
+    } catch (error) {
+      console.error('Error loading routes:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const selectedRoute = routes.find(r => r.id === selectedRouteId);
 
@@ -68,33 +105,47 @@ export default function Routes() {
     setIsDeleteRouteOpen(true);
   };
 
-  const handleSaveRoute = () => {
-    if (editingRoute) {
-      setRoutes(routes.map(r =>
-        r.id === editingRoute.id
-          ? { ...r, name: routeFormData.name, startingPoint: routeFormData.startingPoint }
-          : r
-      ));
-    } else {
-      const newRoute: Route = {
-        id: String(Date.now()),
-        name: routeFormData.name,
-        startingPoint: routeFormData.startingPoint,
-        stops: [],
-      };
-      setRoutes([...routes, newRoute]);
-      setSelectedRouteId(newRoute.id);
-      setShowRouteDetails(true);
+  const handleSaveRoute = async () => {
+    try {
+      if (editingRoute) {
+        // Update existing route
+        const routeRef = doc(db, 'routes', editingRoute.id);
+        await updateDoc(routeRef, {
+          name: routeFormData.name,
+          startingPoint: routeFormData.startingPoint,
+          updatedAt: Timestamp.now(),
+        });
+      } else {
+        // Add new route
+        const newRouteRef = await addDoc(collection(db, 'routes'), {
+          name: routeFormData.name,
+          startingPoint: routeFormData.startingPoint,
+          stops: [],
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+        setSelectedRouteId(newRouteRef.id);
+        setShowRouteDetails(true);
+      }
+      setIsRouteFormOpen(false);
+      loadData();
+    } catch (error) {
+      console.error('Error saving route:', error);
     }
-    setIsRouteFormOpen(false);
   };
 
-  const confirmDeleteRoute = () => {
+  const confirmDeleteRoute = async () => {
     if (selectedRoute) {
-      const newRoutes = routes.filter(r => r.id !== selectedRoute.id);
-      setRoutes(newRoutes);
-      setSelectedRouteId(newRoutes[0]?.id || null);
-      setShowRouteDetails(false);
+      try {
+        const routeRef = doc(db, 'routes', selectedRoute.id);
+        await deleteDoc(routeRef);
+        const newRoutes = routes.filter(r => r.id !== selectedRoute.id);
+        setSelectedRouteId(newRoutes[0]?.id || null);
+        setShowRouteDetails(false);
+        loadData();
+      } catch (error) {
+        console.error('Error deleting route:', error);
+      }
     }
     setIsDeleteRouteOpen(false);
   };
@@ -117,64 +168,91 @@ export default function Routes() {
     setIsDeleteStopOpen(true);
   };
 
-  const handleSaveStop = () => {
+  const handleSaveStop = async () => {
     if (!selectedRoute) return;
 
-    if (editingStop) {
-      setRoutes(routes.map(r =>
-        r.id === selectedRoute.id
-          ? {
-            ...r,
-            stops: r.stops.map(s => s.id === editingStop.id ? { ...s, name: stopFormData.name } : s)
-          }
-          : r
-      ));
-    } else {
-      const newStop: Stop = {
-        id: `${selectedRoute.id}-${Date.now()}`,
-        name: stopFormData.name,
-        order: selectedRoute.stops.length + 1,
-      };
-      setRoutes(routes.map(r =>
-        r.id === selectedRoute.id
-          ? { ...r, stops: [...r.stops, newStop] }
-          : r
-      ));
+    try {
+      let updatedStops: Stop[];
+      if (editingStop) {
+        updatedStops = selectedRoute.stops.map(s =>
+          s.id === editingStop.id ? { ...s, name: stopFormData.name } : s
+        );
+      } else {
+        const newStop: Stop = {
+          id: `${selectedRoute.id}-${Date.now()}`,
+          name: stopFormData.name,
+          order: selectedRoute.stops.length + 1,
+        };
+        updatedStops = [...selectedRoute.stops, newStop];
+      }
+
+      const routeRef = doc(db, 'routes', selectedRoute.id);
+      await updateDoc(routeRef, {
+        stops: updatedStops,
+        updatedAt: Timestamp.now(),
+      });
+      setIsStopFormOpen(false);
+      loadData();
+    } catch (error) {
+      console.error('Error saving stop:', error);
     }
-    setIsStopFormOpen(false);
   };
 
-  const confirmDeleteStop = () => {
+  const confirmDeleteStop = async () => {
     if (!selectedRoute || !stopToDelete) return;
 
-    const updatedStops = selectedRoute.stops
-      .filter(s => s.id !== stopToDelete.id)
-      .map((s, index) => ({ ...s, order: index + 1 }));
+    try {
+      const updatedStops = selectedRoute.stops
+        .filter(s => s.id !== stopToDelete.id)
+        .map((s, index) => ({ ...s, order: index + 1 }));
 
-    setRoutes(routes.map(r =>
-      r.id === selectedRoute.id ? { ...r, stops: updatedStops } : r
-    ));
-    setIsDeleteStopOpen(false);
+      const routeRef = doc(db, 'routes', selectedRoute.id);
+      await updateDoc(routeRef, {
+        stops: updatedStops,
+        updatedAt: Timestamp.now(),
+      });
+      setIsDeleteStopOpen(false);
+      loadData();
+    } catch (error) {
+      console.error('Error deleting stop:', error);
+    }
   };
 
-  const moveStop = (stopId: string, direction: 'up' | 'down') => {
+  const moveStop = async (stopId: string, direction: 'up' | 'down') => {
     if (!selectedRoute) return;
 
-    const stops = [...selectedRoute.stops];
-    const index = stops.findIndex(s => s.id === stopId);
+    try {
+      const stops = [...selectedRoute.stops];
+      const index = stops.findIndex(s => s.id === stopId);
 
-    if (direction === 'up' && index > 0) {
-      [stops[index - 1], stops[index]] = [stops[index], stops[index - 1]];
-    } else if (direction === 'down' && index < stops.length - 1) {
-      [stops[index], stops[index + 1]] = [stops[index + 1], stops[index]];
+      if (direction === 'up' && index > 0) {
+        [stops[index - 1], stops[index]] = [stops[index], stops[index - 1]];
+      } else if (direction === 'down' && index < stops.length - 1) {
+        [stops[index], stops[index + 1]] = [stops[index + 1], stops[index]];
+      }
+
+      const reorderedStops = stops.map((s, i) => ({ ...s, order: i + 1 }));
+
+      const routeRef = doc(db, 'routes', selectedRoute.id);
+      await updateDoc(routeRef, {
+        stops: reorderedStops,
+        updatedAt: Timestamp.now(),
+      });
+      loadData();
+    } catch (error) {
+      console.error('Error moving stop:', error);
     }
-
-    const reorderedStops = stops.map((s, i) => ({ ...s, order: i + 1 }));
-
-    setRoutes(routes.map(r =>
-      r.id === selectedRoute.id ? { ...r, stops: reorderedStops } : r
-    ));
   };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Routes & Stops" subtitle="Loading...">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout

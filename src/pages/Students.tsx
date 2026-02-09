@@ -25,7 +25,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
     Plus,
     Pencil,
-    UserX,
+    Trash2,
     Phone,
     Upload,
     Download,
@@ -58,6 +58,7 @@ import {
     getDocs,
     addDoc,
     updateDoc,
+    deleteDoc,
     doc,
     writeBatch,
     Timestamp,
@@ -98,7 +99,7 @@ export default function Students() {
     const [routes, setRoutes] = useState<Route[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isFormOpen, setIsFormOpen] = useState(false);
-    const [isDeactivateOpen, setIsDeactivateOpen] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
     const [importData, setImportData] = useState<Partial<Student>[]>([]);
@@ -185,9 +186,9 @@ export default function Students() {
         setIsFormOpen(true);
     };
 
-    const handleDeactivate = (student: Student) => {
+    const handleDelete = (student: Student) => {
         setSelectedStudent(student);
-        setIsDeactivateOpen(true);
+        setIsDeleteOpen(true);
     };
 
     const handleSave = async () => {
@@ -235,20 +236,17 @@ export default function Students() {
         }
     };
 
-    const confirmDeactivate = async () => {
+    const confirmDelete = async () => {
         if (selectedStudent) {
             try {
                 const studentRef = doc(db, 'students', selectedStudent.id);
-                await updateDoc(studentRef, {
-                    status: 'inactive',
-                    updatedAt: Timestamp.now(),
-                });
+                await deleteDoc(studentRef);
                 loadData();
             } catch (error) {
-                console.error('Error deactivating student:', error);
+                console.error('Error deleting student:', error);
             }
         }
-        setIsDeactivateOpen(false);
+        setIsDeleteOpen(false);
     };
 
     // Excel Import
@@ -625,16 +623,14 @@ export default function Students() {
                                                 >
                                                     <Pencil className="h-4 w-4" />
                                                 </Button>
-                                                {student.status === 'active' && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => handleDeactivate(student)}
-                                                        className="text-destructive hover:text-destructive"
-                                                    >
-                                                        <UserX className="h-4 w-4" />
-                                                    </Button>
-                                                )}
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleDelete(student)}
+                                                    className="text-destructive hover:text-destructive"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
                                             </div>
                                         </td>
                                     </tr>
@@ -688,16 +684,14 @@ export default function Students() {
                                         >
                                             <Pencil className="h-4 w-4" />
                                         </Button>
-                                        {student.status === 'active' && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleDeactivate(student)}
-                                                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                                            >
-                                                <UserX className="h-4 w-4" />
-                                            </Button>
-                                        )}
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleDelete(student)}
+                                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
                                     </div>
                                 </div>
                             </div>
@@ -1196,14 +1190,14 @@ export default function Students() {
                 </DialogContent>
             </Dialog>
 
-            {/* Deactivate Confirmation */}
+            {/* Delete Confirmation */}
             <ConfirmDialog
-                open={isDeactivateOpen}
-                onOpenChange={setIsDeactivateOpen}
-                title="Deactivate Student"
-                description={`Are you sure you want to deactivate ${selectedStudent?.name}? They will no longer be able to log in.`}
-                confirmLabel="Deactivate"
-                onConfirm={confirmDeactivate}
+                open={isDeleteOpen}
+                onOpenChange={setIsDeleteOpen}
+                title="Delete Student"
+                description={`Are you sure you want to delete ${selectedStudent?.name}? This action cannot be undone.`}
+                confirmLabel="Delete"
+                onConfirm={confirmDelete}
                 variant="destructive"
             />
         </AdminLayout>

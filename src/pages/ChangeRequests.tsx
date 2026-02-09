@@ -3,12 +3,11 @@ import { AdminLayout } from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Check, X, ArrowRight, ArrowDown } from 'lucide-react';
 import { ChangeRequest, RequestStatus } from '@/types/admin';
-import { mockChangeRequests } from '@/data/mockData';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cn } from '@/lib/utils';
 
 export default function ChangeRequests() {
-  const [requests, setRequests] = useState<ChangeRequest[]>(mockChangeRequests);
+  const [requests, setRequests] = useState<ChangeRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<ChangeRequest | null>(null);
   const [action, setAction] = useState<'approve' | 'reject' | null>(null);
 
@@ -20,16 +19,21 @@ export default function ChangeRequests() {
     setAction(actionType);
   };
 
-  const confirmAction = () => {
+  const confirmAction = async () => {
     if (!selectedRequest || !action) return;
 
-    setRequests(requests.map(r =>
-      r.id === selectedRequest.id
-        ? { ...r, status: action === 'approve' ? 'approved' : 'rejected' as RequestStatus }
-        : r
-    ));
-    setSelectedRequest(null);
-    setAction(null);
+    try {
+      const requestRef = doc(db, 'changeRequests', selectedRequest.id);
+      await updateDoc(requestRef, {
+        status: action === 'approve' ? 'approved' : 'rejected',
+        updatedAt: Timestamp.now(),
+      });
+      setSelectedRequest(null);
+      setAction(null);
+      loadData();
+    } catch (error) {
+      console.error('Error updating change request:', error);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -50,6 +54,16 @@ export default function ChangeRequests() {
       month: 'short',
     });
   };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Change Requests" subtitle="Loading...">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout

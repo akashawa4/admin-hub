@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -21,11 +21,25 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import { Bus, BusStatus } from '@/types/admin';
-import { mockBuses, mockDrivers, mockRoutes } from '@/data/mockData';
+import { Bus, BusStatus, Driver, Route } from '@/types/admin';
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  Timestamp,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 
 export default function Buses() {
-  const [buses, setBuses] = useState<Bus[]>(mockBuses);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedBus, setSelectedBus] = useState<Bus | null>(null);
@@ -36,18 +50,56 @@ export default function Buses() {
     status: 'idle' as BusStatus,
   });
 
-  const availableDrivers = mockDrivers.filter(d => d.status === 'active');
-  const availableRoutes = mockRoutes;
+  // Load data from Firestore
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      // Load buses
+      const busesSnapshot = await getDocs(query(collection(db, 'buses'), orderBy('busNumber')));
+      const busesData = busesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Bus[];
+      setBuses(busesData);
+
+      // Load drivers
+      const driversSnapshot = await getDocs(query(collection(db, 'drivers'), orderBy('name')));
+      const driversData = driversSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Driver[];
+      setDrivers(driversData);
+
+      // Load routes
+      const routesSnapshot = await getDocs(query(collection(db, 'routes'), orderBy('name')));
+      const routesData = routesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Route[];
+      setRoutes(routesData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const availableDrivers = drivers.filter(d => d.status === 'active');
+  const availableRoutes = routes;
 
   const getDriverName = (driverId: string | null) => {
     if (!driverId) return '—';
-    const driver = mockDrivers.find(d => d.id === driverId);
+    const driver = availableDrivers.find(d => d.id === driverId);
     return driver?.name || '—';
   };
 
   const getRouteName = (routeId: string | null) => {
     if (!routeId) return '—';
-    const route = mockRoutes.find(r => r.id === routeId);
+    const route = availableRoutes.find(r => r.id === routeId);
     return route?.name || '—';
   };
 
@@ -73,41 +125,107 @@ export default function Buses() {
     setIsDeleteOpen(true);
   };
 
-  const handleSave = () => {
-    const driverId = formData.assignedDriverId === 'none' ? null : formData.assignedDriverId;
-    const routeId = formData.assignedRouteId === 'none' ? null : formData.assignedRouteId;
+  const handleSave = async () => {
+    try {
+      const driverId = formData.assignedDriverId === 'none' ? null : formData.assignedDriverId;
+      const routeId = formData.assignedRouteId === 'none' ? null : formData.assignedRouteId;
 
-    if (selectedBus) {
-      setBuses(buses.map(b =>
-        b.id === selectedBus.id
-          ? {
-            ...b,
-            busNumber: formData.busNumber,
-            assignedDriverId: driverId,
-            assignedRouteId: routeId,
-            status: formData.status,
+      if (selectedBus) {
+        // Update existing bus
+        const busRef = doc(db, 'buses', selectedBus.id);
+        
+        // Handle bidirectional driver-bus relationship
+        const oldDriverId = selectedBus.assignedDriverId;
+        const newDriverId = driverId;
+
+        // If driver assignment changed, update both bus and driver documents
+        if (oldDriverId !== newDriverId) {
+          // Clear old driver's assignedBusId if it was assigned to this bus
+          if (oldDriverId) {
+            const oldDriverRef = doc(db, 'drivers', oldDriverId);
+            await updateDoc(oldDriverRef, {
+              assignedBusId: null,
+              updatedAt: Timestamp.now(),
+            });
           }
-          : b
-      ));
-    } else {
-      const newBus: Bus = {
-        id: String(Date.now()),
-        busNumber: formData.busNumber,
-        assignedDriverId: driverId,
-        assignedRouteId: routeId,
-        status: formData.status,
-      };
-      setBuses([...buses, newBus]);
+
+          // Set new driver's assignedBusId
+          if (newDriverId) {
+            const newDriverRef = doc(db, 'drivers', newDriverId);
+            await updateDoc(newDriverRef, {
+              assignedBusId: selectedBus.id,
+              updatedAt: Timestamp.now(),
+            });
+          }
+        }
+
+        // Update bus document
+        await updateDoc(busRef, {
+          busNumber: formData.busNumber,
+          assignedDriverId: driverId,
+          assignedRouteId: routeId,
+          status: formData.status,
+          updatedAt: Timestamp.now(),
+        });
+      } else {
+        // Add new bus
+        const newBusRef = await addDoc(collection(db, 'buses'), {
+          busNumber: formData.busNumber,
+          assignedDriverId: driverId,
+          assignedRouteId: routeId,
+          status: formData.status,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+
+        // Set driver's assignedBusId if driver is assigned
+        if (driverId) {
+          const driverRef = doc(db, 'drivers', driverId);
+          await updateDoc(driverRef, {
+            assignedBusId: newBusRef.id,
+            updatedAt: Timestamp.now(),
+          });
+        }
+      }
+      setIsFormOpen(false);
+      loadData();
+    } catch (error) {
+      console.error('Error saving bus:', error);
     }
-    setIsFormOpen(false);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (selectedBus) {
-      setBuses(buses.filter(b => b.id !== selectedBus.id));
+      try {
+        // Clear driver's assignedBusId if driver is assigned to this bus
+        if (selectedBus.assignedDriverId) {
+          const driverRef = doc(db, 'drivers', selectedBus.assignedDriverId);
+          await updateDoc(driverRef, {
+            assignedBusId: null,
+            updatedAt: Timestamp.now(),
+          });
+        }
+
+        // Delete bus document
+        const busRef = doc(db, 'buses', selectedBus.id);
+        await deleteDoc(busRef);
+        setIsDeleteOpen(false);
+        loadData();
+      } catch (error) {
+        console.error('Error deleting bus:', error);
+      }
     }
-    setIsDeleteOpen(false);
   };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Buses Management" subtitle="Loading...">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout
@@ -158,6 +276,13 @@ export default function Buses() {
                 </td>
               </tr>
             ))}
+            {buses.length === 0 && (
+              <tr>
+                <td colSpan={5} className="text-center py-8 text-muted-foreground">
+                  No buses added yet
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -197,6 +322,11 @@ export default function Buses() {
             </div>
           </div>
         ))}
+        {buses.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <p className="text-muted-foreground text-sm">No buses added yet</p>
+          </div>
+        )}
       </div>
 
       {/* Add/Edit Dialog */}

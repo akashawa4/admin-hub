@@ -1,15 +1,78 @@
+import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { StatCard } from '@/components/StatCard';
 import { Bus, Users, Route, Radio } from 'lucide-react';
-import { mockBuses, mockDrivers, mockRoutes, mockLiveBuses } from '@/data/mockData';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { Bus as BusType, Driver, Route as RouteType, LiveBus } from '@/types/admin';
 
 export default function Dashboard() {
-  const totalBuses = mockBuses.length;
-  const activeBuses = mockBuses.filter(b => b.status === 'running').length;
-  const totalDrivers = mockDrivers.length;
-  const activeDrivers = mockDrivers.filter(d => d.status === 'active').length;
-  const totalRoutes = mockRoutes.length;
-  const runningRoutes = mockLiveBuses.length;
+  const [isLoading, setIsLoading] = useState(true);
+  const [totalBuses, setTotalBuses] = useState(0);
+  const [activeBuses, setActiveBuses] = useState(0);
+  const [totalDrivers, setTotalDrivers] = useState(0);
+  const [activeDrivers, setActiveDrivers] = useState(0);
+  const [totalRoutes, setTotalRoutes] = useState(0);
+  const [runningRoutes, setRunningRoutes] = useState(0);
+  const [liveBuses, setLiveBuses] = useState<LiveBus[]>([]);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      // Load buses
+      const busesSnapshot = await getDocs(collection(db, 'buses'));
+      const busesData = busesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as BusType[];
+      setTotalBuses(busesData.length);
+      setActiveBuses(busesData.filter(b => b.status === 'running').length);
+
+      // Load drivers
+      const driversSnapshot = await getDocs(collection(db, 'drivers'));
+      const driversData = driversSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Driver[];
+      setTotalDrivers(driversData.length);
+      setActiveDrivers(driversData.filter(d => d.status === 'active').length);
+
+      // Load routes
+      const routesSnapshot = await getDocs(collection(db, 'routes'));
+      const routesData = routesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as RouteType[];
+      setTotalRoutes(routesData.length);
+
+      // Load live buses
+      const liveBusesSnapshot = await getDocs(collection(db, 'liveBuses'));
+      const liveBusesData = liveBusesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as LiveBus[];
+      setLiveBuses(liveBusesData);
+      setRunningRoutes(liveBusesData.length);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Dashboard" subtitle="Loading...">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout
@@ -97,20 +160,28 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {mockLiveBuses.map((bus) => (
-                <tr key={bus.id}>
-                  <td className="font-medium">{bus.busNumber}</td>
-                  <td className="max-w-[100px] sm:max-w-none truncate">{bus.driverName}</td>
-                  <td className="hidden sm:table-cell">{bus.routeName}</td>
-                  <td>
-                    <span className="status-badge status-running">
-                      <span className="w-2 h-2 rounded-full bg-success" />
-                      <span className="hidden xs:inline">Running</span>
-                      <span className="xs:hidden">●</span>
-                    </span>
+              {liveBuses.length > 0 ? (
+                liveBuses.map((bus) => (
+                  <tr key={bus.id}>
+                    <td className="font-medium">{bus.busNumber}</td>
+                    <td className="max-w-[100px] sm:max-w-none truncate">{bus.driverName}</td>
+                    <td className="hidden sm:table-cell">{bus.routeName}</td>
+                    <td>
+                      <span className="status-badge status-running">
+                        <span className="w-2 h-2 rounded-full bg-success" />
+                        <span className="hidden xs:inline">Running</span>
+                        <span className="xs:hidden">●</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} className="text-center py-8 text-muted-foreground">
+                    No active buses at the moment
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

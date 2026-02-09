@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { Bus, User, Route, ChevronDown, ChevronUp } from 'lucide-react';
-import { mockLiveBuses } from '@/data/mockData';
-import { StopStatus } from '@/types/admin';
+import { StopStatus, LiveBus } from '@/types/admin';
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 
 const stopStatusConfig: Record<StopStatus, { icon: string; label: string; className: string }> = {
   reached: { icon: '🟢', label: 'Reached', className: 'text-success' },
@@ -12,16 +13,51 @@ const stopStatusConfig: Record<StopStatus, { icon: string; label: string; classN
 };
 
 export default function LiveMonitoring() {
-  const [selectedBusId, setSelectedBusId] = useState<string | null>(mockLiveBuses[0]?.id || null);
+  const [liveBuses, setLiveBuses] = useState<LiveBus[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [showBusList, setShowBusList] = useState(false);
 
-  const selectedBus = mockLiveBuses.find(b => b.id === selectedBusId);
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const liveBusesSnapshot = await getDocs(query(collection(db, 'liveBuses'), orderBy('busNumber')));
+      const liveBusesData = liveBusesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as LiveBus[];
+      setLiveBuses(liveBusesData);
+      if (liveBusesData.length > 0 && !selectedBusId) {
+        setSelectedBusId(liveBusesData[0].id);
+      }
+    } catch (error) {
+      console.error('Error loading live buses:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const selectedBus = liveBuses.find(b => b.id === selectedBusId);
 
   // Mobile: Toggle bus list visibility
   const handleBusSelect = (busId: string) => {
     setSelectedBusId(busId);
     setShowBusList(false);
   };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Live Monitoring" subtitle="Loading...">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout
@@ -56,7 +92,7 @@ export default function LiveMonitoring() {
           {/* Mobile Bus List Dropdown */}
           {showBusList && (
             <div className="mt-2 rounded-lg border bg-card divide-y max-h-64 overflow-y-auto">
-              {mockLiveBuses.map((bus) => {
+              {liveBuses.map((bus) => {
                 const currentStop = bus.stops.find(s => s.status === 'current');
                 const reachedCount = bus.stops.filter(s => s.status === 'reached').length;
 
@@ -91,10 +127,10 @@ export default function LiveMonitoring() {
         <div className="hidden lg:block lg:col-span-4">
           <div className="rounded-lg border bg-card">
             <div className="border-b px-4 py-3">
-              <h3 className="text-sm font-medium">Active Buses ({mockLiveBuses.length})</h3>
+              <h3 className="text-sm font-medium">Active Buses ({liveBuses.length})</h3>
             </div>
             <div className="divide-y max-h-[calc(100vh-220px)] overflow-y-auto">
-              {mockLiveBuses.map((bus) => {
+              {liveBuses.map((bus) => {
                 const currentStop = bus.stops.find(s => s.status === 'current');
                 const reachedCount = bus.stops.filter(s => s.status === 'reached').length;
 
@@ -137,7 +173,7 @@ export default function LiveMonitoring() {
                   </button>
                 );
               })}
-              {mockLiveBuses.length === 0 && (
+              {liveBuses.length === 0 && (
                 <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                   No active buses at the moment
                 </div>

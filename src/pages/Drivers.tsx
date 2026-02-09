@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -20,14 +20,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, UserX, Phone } from 'lucide-react';
-import { Driver, DriverStatus } from '@/types/admin';
-import { mockDrivers, mockBuses } from '@/data/mockData';
+import { Plus, Pencil, Trash2, Phone } from 'lucide-react';
+import { Driver, DriverStatus, Bus } from '@/types/admin';
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  Timestamp,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 
 export default function Drivers() {
-  const [drivers, setDrivers] = useState<Driver[]>(mockDrivers);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isDeactivateOpen, setIsDeactivateOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -37,15 +50,45 @@ export default function Drivers() {
     password: '',
   });
 
+  // Load data from Firestore
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      // Load drivers
+      const driversSnapshot = await getDocs(query(collection(db, 'drivers'), orderBy('name')));
+      const driversData = driversSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Driver[];
+      setDrivers(driversData);
+
+      // Load buses
+      const busesSnapshot = await getDocs(query(collection(db, 'buses'), orderBy('busNumber')));
+      const busesData = busesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Bus[];
+      setBuses(busesData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getBusNumber = (busId: string | null) => {
     if (!busId) return '—';
-    const bus = mockBuses.find(b => b.id === busId);
+    const bus = buses.find(b => b.id === busId);
     return bus?.busNumber || '—';
   };
 
   const isDriverOnRunningBus = (driver: Driver) => {
     if (!driver.assignedBusId) return false;
-    const bus = mockBuses.find(b => b.id === driver.assignedBusId);
+    const bus = buses.find(b => b.id === driver.assignedBusId);
     return bus?.status === 'running';
   };
 
@@ -67,48 +110,71 @@ export default function Drivers() {
     setIsFormOpen(true);
   };
 
-  const handleDeactivate = (driver: Driver) => {
+  const handleDelete = (driver: Driver) => {
     setSelectedDriver(driver);
-    setIsDeactivateOpen(true);
+    setIsDeleteOpen(true);
   };
 
-  const handleSave = () => {
-    if (selectedDriver) {
-      setDrivers(drivers.map(d =>
-        d.id === selectedDriver.id
-          ? {
-            ...d,
-            name: formData.name,
-            driverId: formData.driverId,
-            phone: formData.phone,
-            status: formData.status,
-          }
-          : d
-      ));
-    } else {
-      const newDriver: Driver = {
-        id: String(Date.now()),
-        name: formData.name,
-        driverId: formData.driverId,
-        phone: formData.phone,
-        assignedBusId: null,
-        status: formData.status,
-      };
-      setDrivers([...drivers, newDriver]);
+  const handleSave = async () => {
+    try {
+      if (selectedDriver) {
+        // Update existing driver
+        const driverRef = doc(db, 'drivers', selectedDriver.id);
+        const updateData: Partial<Driver> = {
+          name: formData.name,
+          driverId: formData.driverId,
+          phone: formData.phone,
+          status: formData.status,
+        };
+        if (formData.password) {
+          updateData.password = formData.password;
+        }
+        await updateDoc(driverRef, {
+          ...updateData,
+          updatedAt: Timestamp.now(),
+        });
+      } else {
+        // Add new driver
+        await addDoc(collection(db, 'drivers'), {
+          name: formData.name,
+          driverId: formData.driverId,
+          phone: formData.phone,
+          password: formData.password,
+          assignedBusId: null,
+          status: formData.status,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+      }
+      setIsFormOpen(false);
+      loadData();
+    } catch (error) {
+      console.error('Error saving driver:', error);
     }
-    setIsFormOpen(false);
   };
 
-  const confirmDeactivate = () => {
+  const confirmDelete = async () => {
     if (selectedDriver) {
-      setDrivers(drivers.map(d =>
-        d.id === selectedDriver.id
-          ? { ...d, status: 'inactive' as DriverStatus }
-          : d
-      ));
+      try {
+        const driverRef = doc(db, 'drivers', selectedDriver.id);
+        await deleteDoc(driverRef);
+        setIsDeleteOpen(false);
+        loadData();
+      } catch (error) {
+        console.error('Error deleting driver:', error);
+      }
     }
-    setIsDeactivateOpen(false);
   };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Drivers Management" subtitle="Loading...">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout
@@ -149,20 +215,25 @@ export default function Drivers() {
                     <Button variant="ghost" size="sm" onClick={() => handleEdit(driver)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    {driver.status === 'active' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeactivate(driver)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <UserX className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(driver)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </td>
               </tr>
             ))}
+            {drivers.length === 0 && (
+              <tr>
+                <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                  No drivers added yet
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -194,20 +265,23 @@ export default function Drivers() {
                 <Button variant="ghost" size="sm" onClick={() => handleEdit(driver)} className="h-8 w-8 p-0">
                   <Pencil className="h-4 w-4" />
                 </Button>
-                {driver.status === 'active' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeactivate(driver)}
-                    className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                  >
-                    <UserX className="h-4 w-4" />
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDelete(driver)}
+                  className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </div>
         ))}
+        {drivers.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <p className="text-muted-foreground text-sm">No drivers added yet</p>
+          </div>
+        )}
       </div>
 
       {/* Add/Edit Dialog */}
@@ -281,25 +355,25 @@ export default function Drivers() {
             <Button variant="outline" onClick={() => setIsFormOpen(false)} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={!formData.name || !formData.driverId} className="w-full sm:w-auto">
+            <Button onClick={handleSave} disabled={!formData.name || !formData.driverId || (!selectedDriver && !formData.password)} className="w-full sm:w-auto">
               {selectedDriver ? 'Save Changes' : 'Add Driver'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Deactivate Confirmation */}
+      {/* Delete Confirmation */}
       <ConfirmDialog
-        open={isDeactivateOpen}
-        onOpenChange={setIsDeactivateOpen}
-        title="Deactivate Driver"
+        open={isDeleteOpen}
+        onOpenChange={setIsDeleteOpen}
+        title="Delete Driver"
         description={
           selectedDriver && isDriverOnRunningBus(selectedDriver)
-            ? `Warning: ${selectedDriver.name} is currently assigned to a running bus. Deactivating will not stop the bus. Are you sure?`
-            : `Are you sure you want to deactivate ${selectedDriver?.name}? They will no longer be able to log in.`
+            ? `Warning: ${selectedDriver.name} is currently assigned to a running bus. Are you sure you want to delete this driver? This action cannot be undone.`
+            : `Are you sure you want to delete ${selectedDriver?.name}? This action cannot be undone.`
         }
-        confirmLabel="Deactivate"
-        onConfirm={confirmDeactivate}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
         variant="destructive"
       />
     </AdminLayout>
