@@ -51,7 +51,7 @@ export default function Routes() {
   const [showRouteDetails, setShowRouteDetails] = useState(false);
 
   const [routeFormData, setRouteFormData] = useState({ name: '', startingPoint: '' });
-  const [stopFormData, setStopFormData] = useState({ name: '' });
+  const [stopFormData, setStopFormData] = useState({ name: '', latitude: '', longitude: '' });
 
   // Load data from Firestore
   useEffect(() => {
@@ -153,13 +153,17 @@ export default function Routes() {
   // Stop management
   const handleAddStop = () => {
     setEditingStop(null);
-    setStopFormData({ name: '' });
+    setStopFormData({ name: '', latitude: '', longitude: '' });
     setIsStopFormOpen(true);
   };
 
   const handleEditStop = (stop: Stop) => {
     setEditingStop(stop);
-    setStopFormData({ name: stop.name });
+    setStopFormData({
+      name: stop.name,
+      latitude: stop.latitude?.toString() || '',
+      longitude: stop.longitude?.toString() || '',
+    });
     setIsStopFormOpen(true);
   };
 
@@ -173,15 +177,27 @@ export default function Routes() {
 
     try {
       let updatedStops: Stop[];
+      const parsedLat = stopFormData.latitude ? parseFloat(stopFormData.latitude) : undefined;
+      const parsedLng = stopFormData.longitude ? parseFloat(stopFormData.longitude) : undefined;
+
       if (editingStop) {
         updatedStops = selectedRoute.stops.map(s =>
-          s.id === editingStop.id ? { ...s, name: stopFormData.name } : s
+          s.id === editingStop.id
+            ? {
+              ...s,
+              name: stopFormData.name,
+              ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
+              ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+            }
+            : s
         );
       } else {
         const newStop: Stop = {
           id: `${selectedRoute.id}-${Date.now()}`,
           name: stopFormData.name,
           order: selectedRoute.stops.length + 1,
+          ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
+          ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
         };
         updatedStops = [...selectedRoute.stops, newStop];
       }
@@ -477,9 +493,33 @@ export default function Routes() {
               <Input
                 id="stopName"
                 value={stopFormData.name}
-                onChange={(e) => setStopFormData({ name: e.target.value })}
+                onChange={(e) => setStopFormData({ ...stopFormData, name: e.target.value })}
                 placeholder="e.g., Main Market"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="stopLatitude">Latitude</Label>
+                <Input
+                  id="stopLatitude"
+                  type="number"
+                  step="any"
+                  value={stopFormData.latitude}
+                  onChange={(e) => setStopFormData({ ...stopFormData, latitude: e.target.value })}
+                  placeholder="e.g., 16.7050"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="stopLongitude">Longitude</Label>
+                <Input
+                  id="stopLongitude"
+                  type="number"
+                  step="any"
+                  value={stopFormData.longitude}
+                  onChange={(e) => setStopFormData({ ...stopFormData, longitude: e.target.value })}
+                  placeholder="e.g., 74.2433"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">

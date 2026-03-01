@@ -1,15 +1,65 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Check, X, ArrowRight, ArrowDown } from 'lucide-react';
 import { ChangeRequest, RequestStatus } from '@/types/admin';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  getDocs,
+  updateDoc,
+  addDoc,
+  doc,
+  Timestamp,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 
 export default function ChangeRequests() {
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<ChangeRequest | null>(null);
   const [action, setAction] = useState<'approve' | 'reject' | null>(null);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const requestsSnapshot = await getDocs(
+        query(collection(db, 'changeRequests'), orderBy('requestedAt', 'desc'))
+      );
+
+      const requestsData = requestsSnapshot.docs.map((snapshotDoc) => {
+        const data = snapshotDoc.data() as any;
+        // Normalize requestedAt to ISO string for display helpers
+        let requestedAt: string;
+        if (data.requestedAt?.toDate) {
+          requestedAt = data.requestedAt.toDate().toISOString();
+        } else if (typeof data.requestedAt === 'string') {
+          requestedAt = data.requestedAt;
+        } else {
+          requestedAt = new Date().toISOString();
+        }
+
+        return {
+          id: snapshotDoc.id,
+          ...data,
+          requestedAt,
+        } as ChangeRequest;
+      });
+
+      setRequests(requestsData);
+    } catch (error) {
+      console.error('Error loading change requests:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const pendingRequests = requests.filter(r => r.status === 'pending');
   const processedRequests = requests.filter(r => r.status !== 'pending');
@@ -24,13 +74,15 @@ export default function ChangeRequests() {
 
     try {
       const requestRef = doc(db, 'changeRequests', selectedRequest.id);
+
       await updateDoc(requestRef, {
-        status: action === 'approve' ? 'approved' : 'rejected',
+        status: action === 'approve' ? 'approved' : ('rejected' as RequestStatus),
         updatedAt: Timestamp.now(),
       });
+
       setSelectedRequest(null);
       setAction(null);
-      loadData();
+      await loadData();
     } catch (error) {
       console.error('Error updating change request:', error);
     }
@@ -55,6 +107,48 @@ export default function ChangeRequests() {
     });
   };
 
+  const addDemoRequests = async () => {
+    try {
+      const now = Timestamp.now();
+
+      const demoRequests: Omit<ChangeRequest, 'id'>[] = [
+        {
+          studentName: 'Demo Student One',
+          studentId: 'STU-DEMO-001',
+          currentRoute: 'Route no.1-Kolhapur to Kagal',
+          currentStop: 'Demo Stop A',
+          requestedRoute: 'Route no.3-Kolhapur to Kagal',
+          requestedStop: 'Demo Stop C',
+          status: 'pending',
+          requestedAt: now.toDate().toISOString(),
+        },
+        {
+          studentName: 'Demo Student Two',
+          studentId: 'STU-DEMO-002',
+          currentRoute: 'Route no.2-Kolhapur to Kagal',
+          currentStop: 'Demo Stop B',
+          requestedRoute: 'Route no.3-Kolhapur to Kagal',
+          requestedStop: 'Demo Stop D',
+          status: 'pending',
+          requestedAt: now.toDate().toISOString(),
+        },
+      ];
+
+      for (const req of demoRequests) {
+        await addDoc(collection(db, 'changeRequests'), {
+          ...req,
+          requestedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      await loadData();
+    } catch (error) {
+      console.error('Error adding demo change requests:', error);
+    }
+  };
+
   if (isLoading) {
     return (
       <AdminLayout title="Change Requests" subtitle="Loading...">
@@ -69,6 +163,11 @@ export default function ChangeRequests() {
     <AdminLayout
       title="Change Requests"
       subtitle="Student route change requests"
+      actions={
+        <Button size="sm" variant="outline" onClick={addDemoRequests}>
+          Add 2 demo requests
+        </Button>
+      }
     >
       {/* Pending Requests */}
       <div className="mb-6 lg:mb-8">

@@ -377,19 +377,94 @@ export default function Students() {
     };
 
     const downloadTemplate = () => {
-        const templateData = [
+        // Create instructions sheet
+        const instructions = [
+            ['Student Import Template - Instructions'],
+            [''],
+            ['How to use this template:'],
+            ['1. Fill in student details in the "Student Data" sheet'],
+            ['2. Required fields: name, email, year, department, password'],
+            ['3. Optional field: phone'],
+            ['4. Save the file and import it in the admin panel'],
+            [''],
+            ['Field Descriptions:'],
+            ['Field', 'Description', 'Example', 'Required'],
+            ['name', 'Full name of the student', 'John Doe', 'Yes'],
+            ['email', 'Student email address', 'john@example.com', 'Yes'],
+            ['phone', 'Contact number with country code', '+91 98765 43210', 'No'],
+            ['year', 'Academic year (1st/2nd/3rd/4th Year)', '1st Year', 'Yes'],
+            ['department', 'Department name', 'Computer Science', 'Yes'],
+            ['password', 'Login password for student', 'student123', 'Yes'],
+            [''],
+            ['Valid Year Values:'],
+            ['1st Year, 2nd Year, 3rd Year, 4th Year'],
+            [''],
+            ['Valid Departments:'],
+            [DEPARTMENTS.join(', ')],
+            [''],
+            ['Note: Students can select their route and stop after logging in.'],
+        ];
+
+        // Create sample data sheet
+        const sampleData = [
             {
                 name: 'John Doe',
-                email: 'john@example.com',
+                email: 'john.doe@college.edu',
                 phone: '+91 98765 43210',
                 year: '1st Year',
                 department: 'Computer Science',
                 password: 'student123',
             },
+            {
+                name: 'Jane Smith',
+                email: 'jane.smith@college.edu',
+                phone: '+91 98765 43211',
+                year: '2nd Year',
+                department: 'Electronics',
+                password: 'student123',
+            },
+            {
+                name: 'Rahul Kumar',
+                email: 'rahul.kumar@college.edu',
+                phone: '+91 98765 43212',
+                year: '3rd Year',
+                department: 'Mechanical',
+                password: 'student123',
+            },
         ];
-        const ws = XLSX.utils.json_to_sheet(templateData);
+
+        // Create workbook
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Template');
+
+        // Add instructions sheet
+        const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
+
+        // Style the instructions sheet (set column widths)
+        wsInstructions['!cols'] = [
+            { wch: 15 },
+            { wch: 40 },
+            { wch: 25 },
+            { wch: 10 },
+        ];
+
+        XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
+
+        // Add sample data sheet
+        const wsSample = XLSX.utils.json_to_sheet(sampleData);
+
+        // Set column widths for sample data
+        wsSample['!cols'] = [
+            { wch: 20 }, // name
+            { wch: 30 }, // email
+            { wch: 18 }, // phone
+            { wch: 12 }, // year
+            { wch: 25 }, // department
+            { wch: 15 }, // password
+        ];
+
+        XLSX.utils.book_append_sheet(wb, wsSample, 'Student Data');
+
+        // Download the file
         XLSX.writeFile(wb, 'student_import_template.xlsx');
     };
 
@@ -479,6 +554,15 @@ export default function Students() {
                     <Button
                         variant="outline"
                         size="sm"
+                        onClick={downloadTemplate}
+                        className="hidden md:flex"
+                    >
+                        <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        Download Template
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => fileInputRef.current?.click()}
                         className="hidden sm:flex"
                     >
@@ -510,18 +594,77 @@ export default function Students() {
 
                 {/* Students List Tab */}
                 <TabsContent value="list" className="space-y-4">
-                    {/* Mobile Import Button */}
-                    <div className="sm:hidden">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="w-full"
-                        >
-                            <Upload className="h-4 w-4 mr-2" />
-                            Import from Excel
-                        </Button>
-                    </div>
+                    {/* Excel Import Info Card */}
+                    <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
+                        <CardContent className="pt-4">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                <div className="flex items-start gap-3">
+                                    <div className="p-2 rounded-lg bg-primary/10">
+                                        <FileSpreadsheet className="h-5 w-5 text-primary" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-sm mb-1">Bulk Import Students</h3>
+                                        <p className="text-xs text-muted-foreground">
+                                            Download the Excel template, fill in student details, and import to add multiple students at once.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 w-full sm:w-auto">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={downloadTemplate}
+                                        className="flex-1 sm:flex-none"
+                                    >
+                                        <FileSpreadsheet className="h-4 w-4 mr-2" />
+                                        Download Template
+                                    </Button>
+                                    <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="flex-1 sm:flex-none"
+                                    >
+                                        <Upload className="h-4 w-4 mr-2" />
+                                        Import Excel
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Import Error Display */}
+                    {importError && (
+                        <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
+                            <div className="flex items-start gap-3">
+                                <div className="flex-shrink-0 mt-0.5">
+                                    <svg
+                                        className="h-5 w-5"
+                                        fill="none"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                    >
+                                        <path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-semibold text-sm mb-1">Import Error</h4>
+                                    <p className="text-sm">{importError}</p>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setImportError(null)}
+                                        className="mt-2 h-7 text-xs"
+                                    >
+                                        Dismiss
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Stats Cards */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
